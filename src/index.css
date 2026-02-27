@@ -1,0 +1,275 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Root & Typography ───────────────────────────────────────────────── */
+:root {
+  --color-brand:   #6366f1;
+  --color-brand2:  #8b5cf6;
+  --color-cyan:    #06b6d4;
+  --color-bg:      #05050f;
+  --color-card:    rgba(255,255,255,0.04);
+  --glass-blur:    20px;
+  --glow-brand:    rgba(99,102,241,0.5);
+  --glow-violet:   rgba(139,92,246,0.4);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', ui-sans-serif, system-ui;
+  background-color: var(--color-bg);
+  color: #e2e8f0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Scrollbar ───────────────────────────────────────────────────────── */
+::-webkit-scrollbar              { width: 5px; height: 5px; }
+::-webkit-scrollbar-track        { background: transparent; }
+::-webkit-scrollbar-thumb        { background: rgba(99,102,241,0.4); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover  { background: rgba(99,102,241,0.7); }
+
+/* ─── Glass utilities ─────────────────────────────────────────────────── */
+@layer components {
+
+  /* Main cards / panels */
+  .glass-card {
+    background: rgba(255,255,255,0.04);
+    backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 1rem;
+    box-shadow:
+      0 8px 32px rgba(0,0,0,0.4),
+      inset 0 1px 0 rgba(255,255,255,0.07),
+      0 0 0 1px rgba(99,102,241,0.05);
+  }
+
+  /* Sidebar panel */
+  .glass-sidebar {
+    background: rgba(5,5,20,0.65);
+    backdrop-filter: blur(28px) saturate(220%);
+    -webkit-backdrop-filter: blur(28px) saturate(220%);
+    border-right: 1px solid rgba(99,102,241,0.18);
+    box-shadow: 4px 0 24px rgba(0,0,0,0.5), inset -1px 0 0 rgba(255,255,255,0.04);
+  }
+
+  /* Top bar */
+  .glass-topbar {
+    background: rgba(5,5,20,0.55);
+    backdrop-filter: blur(28px) saturate(200%);
+    -webkit-backdrop-filter: blur(28px) saturate(200%);
+    border-bottom: 1px solid rgba(99,102,241,0.18);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.35), inset 0 -1px 0 rgba(255,255,255,0.04);
+  }
+
+  /* Dropdown panel */
+  .glass-dropdown {
+    background: rgba(8,8,28,0.88);
+    backdrop-filter: blur(32px) saturate(200%);
+    -webkit-backdrop-filter: blur(32px) saturate(200%);
+    border: 1px solid rgba(99,102,241,0.22);
+    box-shadow:
+      0 20px 60px rgba(0,0,0,0.7),
+      0 0 0 1px rgba(139,92,246,0.08),
+      inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+
+  /* Primary button */
+  .btn-primary {
+    @apply relative overflow-hidden
+           text-white font-semibold px-6 py-3 rounded-xl
+           transition-all duration-200 disabled:opacity-40
+           disabled:cursor-not-allowed;
+    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+    box-shadow: 0 0 14px rgba(99,102,241,0.45), 0 4px 12px rgba(0,0,0,0.4);
+  }
+  .btn-primary::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, transparent 50%);
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .btn-primary:hover:not(:disabled)::before { opacity: 1; }
+  .btn-primary:hover:not(:disabled) {
+    box-shadow: 0 0 24px rgba(99,102,241,0.65), 0 0 48px rgba(139,92,246,0.25), 0 4px 20px rgba(0,0,0,0.5);
+    transform: translateY(-1px);
+  }
+  .btn-primary:active:not(:disabled) { transform: translateY(0); }
+
+  /* Secondary button */
+  .btn-secondary {
+    @apply font-medium px-6 py-3 rounded-xl transition-all duration-200;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #cbd5e1;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+  .btn-secondary:hover {
+    background: rgba(99,102,241,0.1);
+    border-color: rgba(99,102,241,0.35);
+    color: #e2e8f0;
+    box-shadow: 0 0 12px rgba(99,102,241,0.2), 0 2px 8px rgba(0,0,0,0.4);
+  }
+
+  /* Input fields */
+  .input-field {
+    @apply w-full text-slate-200 placeholder-slate-500
+           rounded-xl px-4 py-3 text-sm
+           focus:outline-none transition-all duration-200;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.09);
+    box-shadow: inset 0 2px 6px rgba(0,0,0,0.3);
+  }
+  .input-field:focus {
+    background: rgba(99,102,241,0.07);
+    border-color: rgba(99,102,241,0.5);
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.15), inset 0 2px 6px rgba(0,0,0,0.2);
+  }
+
+  .label-text {
+    @apply text-xs font-medium uppercase tracking-wider text-slate-400 mb-1 block;
+  }
+
+  .section-title {
+    @apply text-2xl font-bold text-white tracking-tight;
+    text-shadow: 0 0 30px rgba(99,102,241,0.3);
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5
+           rounded-full text-xs font-medium;
+  }
+}
+
+/* ─── Ambient orb (floating blobs animated) ──────────────────────────── */
+@keyframes floatOrb {
+  0%,100% { transform: translate(0,0) scale(1); opacity: 0.25; }
+  33%     { transform: translate(40px,-30px) scale(1.15); opacity: 0.4; }
+  66%     { transform: translate(-25px, 18px) scale(0.88); opacity: 0.22; }
+}
+.orb {
+  animation: floatOrb 10s ease-in-out infinite;
+  border-radius: 50%;
+  filter: blur(60px);
+}
+
+/* ─── Border shimmer on hover ─────────────────────────────────────────── */
+@keyframes borderShimmer {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.shimmer-border {
+  position: relative;
+}
+.shimmer-border::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #6366f1, #8b5cf6, #06b6d4, #6366f1);
+  background-size: 300% 300%;
+  animation: borderShimmer 3s linear infinite;
+  opacity: 0;
+  transition: opacity 0.3s;
+  z-index: -1;
+}
+.shimmer-border:hover::after { opacity: 0.6; }
+
+/* ─── Neon text glow ──────────────────────────────────────────────────── */
+.neon-text {
+  text-shadow: 0 0 8px rgba(99,102,241,0.9), 0 0 24px rgba(99,102,241,0.5), 0 0 48px rgba(99,102,241,0.2);
+}
+.neon-text-sm {
+  text-shadow: 0 0 6px rgba(99,102,241,0.7), 0 0 16px rgba(99,102,241,0.3);
+}
+
+/* ─── Three.js canvas fill ────────────────────────────────────────────── */
+.three-canvas canvas {
+  outline: none !important;
+}
+
+/* ─── Annotation tooltip ──────────────────────────────────────────────── */
+.annotation-tooltip {
+  pointer-events: none;
+  transform: translateX(-50%) translateY(-110%);
+}
+
+/* ─── Scan line animation ─────────────────────────────────────────────── */
+@keyframes scanLine {
+  0%   { top: 0%; }
+  100% { top: 100%; }
+}
+.scan-line {
+  animation: scanLine 2s linear infinite;
+  position: absolute;
+  left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #6366f1, #818cf8, #06b6d4, #6366f1, transparent);
+  box-shadow: 0 0 10px #6366f1, 0 0 20px #818cf8, 0 0 4px #06b6d4;
+}
+
+/* ─── Hotspot pulse ring ──────────────────────────────────────────────── */
+@keyframes hotspotPulse {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50%      { transform: scale(1.6); opacity: 0; }
+}
+.hotspot-ring {
+  animation: hotspotPulse 1.8s ease-out infinite;
+}
+
+/* ─── Page fade-in ────────────────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in-up {
+  animation: fadeInUp 0.5s ease both;
+}
+
+/* ─── Glowing card accent line ───────────────────────────────────────── */
+@keyframes accentPulse {
+  0%, 100% { opacity: 0.5; transform: scaleX(0.7); }
+  50%      { opacity: 1;   transform: scaleX(1); }
+}
+.card-accent {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #6366f1, #8b5cf6, transparent);
+  animation: accentPulse 3s ease-in-out infinite;
+}
+
+/* ─── Aurora gradient text ───────────────────────────────────────────── */
+@keyframes auroraText {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.aurora-text {
+  background: linear-gradient(90deg, #818cf8, #a78bfa, #67e8f9, #818cf8);
+  background-size: 300% 300%;
+  animation: auroraText 5s ease infinite;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── Nav active glow ────────────────────────────────────────────────── */
+.nav-active-glow {
+  box-shadow: 0 0 16px rgba(99,102,241,0.3), inset 0 0 16px rgba(99,102,241,0.06);
+}
+
+/* ─── Dropzone hover glow ────────────────────────────────────────────── */
+.dropzone-active {
+  border-color: rgba(99,102,241,0.7) !important;
+  box-shadow: 0 0 30px rgba(99,102,241,0.3), inset 0 0 30px rgba(99,102,241,0.05);
+}
