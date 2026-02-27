@@ -1,30 +1,6 @@
 # ─── Python / FastAPI backend ─────────────────────────────────────────────
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-.Python
-*.egg-info/
-dist/
-build/
-.eggs/
-*.egg
-.env
-.venv/
-venv/
-env/
-pip-log.txt
-pip-delete-this-directory.txt
-.pytest_cache/
-.mypy_cache/
 
-# ─── ML model files (large binaries — store in cloud storage) ─────────────
-backend/models/*.pkl
-backend/models/*.h5
-backend/models/*.pt
-backend/models/*.pth
-backend/models/*.onnx
-# ^ Keep README.txt in models/ tracked; exclude binaries
+
 
 # ─── Node / React frontend ────────────────────────────────────────────────
 node_modules/
@@ -32,10 +8,7 @@ dist/
 .DS_Store
 *.local
 
-# ─── Environment files ────────────────────────────────────────────────────
-.env
-.env.local
-.env.*.local
+
 
 # ─── Editor ───────────────────────────────────────────────────────────────
 .vscode/extensions.json
