@@ -1,21 +1,41 @@
-# ─── Web framework ────────────────────────────────────────────────────────
+# ─── Web framework ────────────────────────────────────────────────────────────
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
 python-multipart==0.0.20
+starlette==0.41.3
+aiofiles==24.1.0
 
-# ─── Data & ML ────────────────────────────────────────────────────────────
+# ─── Data validation ──────────────────────────────────────────────────────────
+pydantic==2.10.3
+
+# ─── Numeric / Scientific ─────────────────────────────────────────────────────
 numpy==1.26.4
+scipy==1.13.1
+pandas==2.2.3
+
+# ─── Machine Learning — tabular ensemble ──────────────────────────────────────
 scikit-learn==1.6.1
 joblib==1.4.2
 xgboost==2.1.3
 lightgbm==4.5.0
 catboost==1.2.7
 
-# ─── Validation ───────────────────────────────────────────────────────────
-pydantic==2.10.3
+# ─── Deep Learning — EfficientNet-B3 X-ray / MRI-CT CNN ──────────────────────
+# Install the CPU-only build unless you have a CUDA-capable GPU.
+# For GPU support replace the index URL with the appropriate CUDA wheel.
+torch==2.5.1+cpu ; sys_platform == "win32"
+torchvision==0.20.1+cpu ; sys_platform == "win32"
+torch==2.5.1 ; sys_platform != "win32"
+torchvision==0.20.1 ; sys_platform != "win32"
 
-# ─── Utilities (optional, useful for future image/PDF work) ───────────────
+# ─── Image processing ─────────────────────────────────────────────────────────
 Pillow==11.0.0
-pdfplumber>=0.11.4        # PDF text extraction for report predictor
-torch>=2.5.1              # EfficientNet-B3 X-ray model
-torchvision>=0.20.0       # model architecture + transforms
+
+# ─── PDF / report text extraction ─────────────────────────────────────────────
+pdfplumber==0.11.4
+pdfminer.six==20231228          # pdfplumber dependency (explicit pin)
+pypdf==5.1.0                    # fallback PDF reader
+
+# ─── Utilities ────────────────────────────────────────────────────────────────
+python-dotenv==1.0.1            # load .env for VITE_API_BASE_URL / model paths
+tqdm==4.67.1                    # progress bars (used by catboost / lightgbm)
