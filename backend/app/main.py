@@ -18,9 +18,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.model_loader import load_model, is_model_loaded
+from app.model_loader import load_model, load_xray_model, is_model_loaded
 from app.schemas import HealthResponse
-from app.routes import manual, report, xray
+from app.routes import manual, report, xray, mri
 
 # ─── Logging configuration ────────────────────────────────────────────────
 logging.basicConfig(
@@ -37,6 +37,7 @@ async def lifespan(app: FastAPI):
     """Load the ML model exactly once when the server starts."""
     logger.info("🚀  Osteocare.ai backend starting up…")
     load_model()
+    load_xray_model()
     yield
     logger.info("🛑  Osteocare.ai backend shutting down.")
 
@@ -82,7 +83,7 @@ app.add_middleware(
 app.include_router(manual.router)
 app.include_router(report.router)
 app.include_router(xray.router)
-
+app.include_router(mri.router)
 
 # ─── Health check ─────────────────────────────────────────────────────────
 @app.get(

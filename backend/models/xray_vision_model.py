@@ -290,13 +290,13 @@ def _fallback_hash(image_bytes: bytes) -> Tuple[str, float, float, float, dict]:
     return label, conf, max(-5.5, t), max(0.35, round(b, 3)), {}
 
 
-# ─── Public entry point ──────────────────────────────────────────────────────
+# ─── Public entry point (heuristic) ─────────────────────────────────────────
 
 def analyse_xray(
     image_bytes: bytes,
 ) -> Tuple[str, float, float, float, Dict[str, str]]:
     """
-    Analyse a bone X-ray image.
+    Heuristic bone X-ray analysis (fallback when CNN model is not loaded).
 
     Returns:
         (label, confidence, t_score, bmd, analysis_metrics)
@@ -312,3 +312,107 @@ def analyse_xray(
         return label, confidence, t_score, bmd, metrics
     except Exception:
         return _fallback_hash(image_bytes)
+
+
+# ─── EfficientNet-B3 CNN inference ───────────────────────────────────────────
+
+# Class index → label (must match training order)
+_CNN_CLASSES = ["Normal", "Osteopenia", "Osteoporosis"]
+
+# T-score ranges per class: (low, high)  — confidence maps to position in range
+_CNN_T_RANGES = {
+    "Normal":       (-1.0,  0.5),
+    "Osteopenia":   (-2.5, -1.0),
+    "Osteoporosis": (-4.0, -2.5),
+}
+_CNN_BMD_RANGES = {
+    "Normal":       (0.90, 1.10),
+    "Osteopenia":   (0.70, 0.90),
+    "Osteoporosis": (0.40, 0.70),
+}
+
+
+def _tscore_from_label_confidence(label: str, confidence: float) -> float:
+    """
+    Map (label, confidence) to a T-score within the label's clinical range.
+    High confidence → value toward centre of range.
+    Low  confidence → value near the boundary (most uncertain end).
+    """
+    lo, hi = _CNN_T_RANGES[label]
+    centre = (lo + hi) / 2.0
+    # Blend between boundary and centre based on confidence
+    boundary = hi if label == "Normal" else lo   # uncertain boundary per class
+    t = boundary + (centre - boundary) * confidence
+    return round(max(lo - 0.5, min(hi + 0.5, t)), 2)
+
+
+def _bmd_from_tscore(t_score: float) -> float:
+    bmd = round(0.95 + t_score * 0.12, 3)
+    return max(0.35, min(1.30, bmd))
+
+
+def analyse_xray_cnn(
+    image_bytes: bytes,
+    model,
+) -> Tuple[str, float, float, float, Dict[str, str]]:
+    """
+    Run EfficientNet-B3 inference on a bone X-ray image.
+
+    Preprocessing matches training:
+      • Resize to 300×300
+      • Convert to RGB
+      • ToTensor + ImageNet normalisation
+
+    Returns:
+        (label, confidence, t_score, bmd, analysis_metrics)
+    """
+    import io as _io
+    import torch
+    import numpy as np
+    from PIL import Image
+    from torchvision import transforms
+
+    _tfm = transforms.Compose([
+        transforms.Resize((300, 300)),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225],
+        ),
+    ])
+
+    # ── Decode & preprocess ───────────────────────────────────────────────
+    img = Image.open(_io.BytesIO(image_bytes)).convert("RGB")
+    x   = _tfm(img).unsqueeze(0)          # (1, 3, 300, 300)
+
+    # ── Inference ─────────────────────────────────────────────────────────
+    with torch.no_grad():
+        logits = model(x)
+        proba  = torch.softmax(logits, dim=1).numpy()[0]   # shape (3,)
+
+    pred_idx   = int(np.argmax(proba))
+    label      = _CNN_CLASSES[pred_idx]
+    confidence = float(proba[pred_idx])
+
+    # ── Derive T-score / BMD ──────────────────────────────────────────────
+    t_score = _tscore_from_label_confidence(label, confidence)
+    bmd     = _bmd_from_tscore(t_score)
+
+    # ── Build display metrics ─────────────────────────────────────────────
+    # Try to also run heuristic feature extraction for the diagnostic panel
+    try:
+        feats, _, _, _ = _extract_features(image_bytes)
+        metrics = _build_metrics_display(feats, label, t_score, bmd)
+    except Exception:
+        metrics = {}
+
+    # Add CNN-specific entries
+    metrics["Model"]            = "EfficientNet-B3 (Deep CNN)"
+    metrics["CNN Confidence"]   = f"{confidence:.1%}"
+    metrics["P(Normal)"]        = f"{proba[0]:.1%}"
+    metrics["P(Osteopenia)"]    = f"{proba[1]:.1%}"
+    metrics["P(Osteoporosis)"]  = f"{proba[2]:.1%}"
+    metrics["Estimated T-score"] = f"{t_score:+.2f}"
+    metrics["Estimated BMD"]    = f"{bmd:.3f} g/cm\u00b2"
+
+    return label, confidence, t_score, bmd, metrics

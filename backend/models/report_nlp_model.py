@@ -276,26 +276,110 @@ def _hash_fallback(content: bytes, filename: str = "") -> Tuple[str, float, floa
     jitter = int(digest[8:12], 16) / 0xFFFF * 0.12
     return label, round(min(0.93, cb + jitter), 4), max(-5.5, t), max(0.40, b)
 
+# ─── Tabular-model feature builder ────────────────────────────────────────────
+
+def build_tabular_features_16(
+    age_r, gender_r, weight_r, height_r, bmi_r,
+    calcium_r, vitd_r, act_r, smok_r, alc_r,
+    fhist_r, pfrac_r, meno_r, ster_r,
+) -> list:
+    """
+    Convert extracted (value, display) tuples into the 16-element feature
+    vector expected by tabular_ensemble_model.pkl + scaler.pkl.
+
+    Feature order (must match feature_columns.pkl):
+      0  Age
+      1  Gender_Male                          0=Female 1=Male
+      2  Hormonal Changes_Postmenopausal      inferred or explicit
+      3  Family History_Yes
+      4  Race/Ethnicity_Asian                 0 – not extracted from reports
+      5  Race/Ethnicity_Caucasian             0 – not extracted from reports
+      6  Body Weight_Underweight              BMI < 18.5
+      7  Calcium Intake_Low                   serum Ca extracted as Low (0) → 1
+      8  Vitamin D Intake_Sufficient          extracted as Sufficient (1) → 1
+      9  Physical Activity_Sedentary          extracted as Sedentary (0) → 1
+      10 Smoking_Yes
+      11 Alcohol Consumption_Unknown          1 if alcohol not found in report
+      12 Medical Conditions_Rheumatoid Arthritis  0 – not extracted
+      13 Medical Conditions_Unknown               0 – not extracted
+      14 Medications_Unknown                      1 if medication not found
+      15 Prior Fractures_Yes
+    """
+    age    = age_r[0]    if age_r    else 55.0
+    gender = gender_r[0] if gender_r else 0.0      # 0=Female, 1=Male
+    weight = weight_r[0] if weight_r else 65.0
+    height = height_r[0] if height_r else 163.0
+    bmi    = bmi_r[0]    if bmi_r    else round(weight / ((height / 100) ** 2), 2)
+
+    # Postmenopausal: explicit meno field, else infer from female + age ≥ 50
+    postmeno = (
+        meno_r[0] if meno_r is not None
+        else (1.0 if gender == 0.0 and age >= 50.0 else 0.0)
+    )
+
+    family_history  = fhist_r[0] if fhist_r is not None else 0.0
+    underweight     = 1.0 if bmi < 18.5 else 0.0
+
+    # calcium_r value: 0=Low, 1=Normal, 2=High; feature = Calcium Intake_Low
+    calcium_low     = 1.0 if (calcium_r is not None and calcium_r[0] == 0.0) else 0.0
+
+    # vitd_r value: 0=Deficient, 1=Sufficient; feature = VitD Intake_Sufficient
+    vitd_sufficient = vitd_r[0] if vitd_r is not None else 0.0
+
+    # act_r value: 0=Sedentary, 1=Moderate, 2=Active; feature = Sedentary
+    sedentary       = 1.0 if (act_r is not None and act_r[0] == 0.0) else 0.0
+
+    smoking         = smok_r[0] if smok_r is not None else 0.0   # 0=No, 1=Yes
+
+    # Alcohol Unknown = 1 when we couldn't extract alcohol info from the report
+    alcohol_unknown = 0.0 if alc_r is not None else 1.0
+
+    # Medications Unknown = 1 when no steroid/medication info found
+    meds_unknown    = 0.0 if ster_r is not None else 1.0
+
+    prior_fractures = pfrac_r[0] if pfrac_r is not None else 0.0
+
+    return [
+        age,             # 0  Age
+        gender,          # 1  Gender_Male
+        postmeno,        # 2  Hormonal Changes_Postmenopausal
+        family_history,  # 3  Family History_Yes
+        0.0,             # 4  Race/Ethnicity_Asian
+        0.0,             # 5  Race/Ethnicity_Caucasian
+        underweight,     # 6  Body Weight_Underweight
+        calcium_low,     # 7  Calcium Intake_Low
+        vitd_sufficient, # 8  Vitamin D Intake_Sufficient
+        sedentary,       # 9  Physical Activity_Sedentary
+        smoking,         # 10 Smoking_Yes
+        alcohol_unknown, # 11 Alcohol Consumption_Unknown
+        0.0,             # 12 Medical Conditions_Rheumatoid Arthritis
+        0.0,             # 13 Medical Conditions_Unknown
+        meds_unknown,    # 14 Medications_Unknown
+        prior_fractures, # 15 Prior Fractures_Yes
+    ]
+
+
 # ─── Main entry point ────────────────────────────────────────────────────────
 
 def analyse_report(
     content: bytes,
     filename: str = "",
-) -> Tuple[str, float, Optional[float], Optional[float], str, dict]:
+) -> Tuple[str, float, Optional[float], Optional[float], str, dict, Optional[list]]:
     """
-    Extract all clinical data from a report and predict with the manual model
-    when sufficient features are found; otherwise fall back to T-score/BMD/keyword.
+    Extract all clinical data from a report and return a rule-based prediction
+    alongside the 16-element feature vector for the tabular ensemble model.
 
     Returns:
-        (label, confidence, t_score, bmd, evidence_source, extracted_data)
-        extracted_data  - dict[field_name -> display_value] shown in the UI
+        (label, confidence, t_score, bmd, evidence_source, extracted_data, raw_features_16)
+        raw_features_16 – list[float] of 16 values ready for scaler.transform()
+                          None only when no text could be read at all.
     """
     text = extract_text(content, filename)
     extracted_data: dict[str, str] = {}
 
     if not text.strip():
         label, confidence, t_score, bmd = _hash_fallback(content, filename)
-        return label, confidence, t_score, bmd, "No readable text found in file -- statistical estimate", {}
+        return label, confidence, t_score, bmd, "No readable text found in file -- statistical estimate", {}, None
 
     # ── Extract all 14 clinical features ─────────────────────────────────
     age_r     = _age(text)
@@ -336,6 +420,13 @@ def analyse_report(
             extracted_data[key] = result[1]
 
     coverage = len(extracted_data)
+
+    # ── Always build the 16-feature vector (may have defaults for missing) ─
+    raw_features_16 = build_tabular_features_16(
+        age_r, gender_r, weight_r, height_r, bmi_r,
+        calcium_r, vitd_r, act_r, smok_r, alc_r,
+        fhist_r, pfrac_r, meno_r, ster_r,
+    )
 
     # ── Also extract direct T-score / BMD ────────────────────────────────
     found_t:   Optional[float] = None
@@ -412,9 +503,8 @@ def analyse_report(
         if found_bmd is not None:
             bmd = found_bmd
 
-        total_fields = coverage + (1 if found_t is not None else 0) + (1 if found_bmd is not None else 0)
-        src = f"Clinical data extracted ({coverage}/14 fields) -- scored with clinical model"
-        return pred_label, confidence, round(t_score, 2), round(bmd, 3), src, extracted_data
+        src = f"Clinical data extracted ({coverage}/14 fields) — scored with clinical model"
+        return pred_label, confidence, round(t_score, 2), round(bmd, 3), src, extracted_data, raw_features_16
 
     # ── PATH B: T-score found ────────────────────────────────────────────
     if found_t is not None:
@@ -424,14 +514,14 @@ def analyse_report(
             confidence = round(min(0.88, confidence + 0.06), 4)
         bmd = found_bmd if found_bmd else _bmd_from_t(found_t)
         src = f"T-score from report ({coverage} clinical fields also found)"
-        return pred_label, confidence, found_t, round(bmd, 3), src, extracted_data
+        return pred_label, confidence, found_t, round(bmd, 3), src, extracted_data, raw_features_16
 
     # ── PATH C: BMD only ─────────────────────────────────────────────────
     if found_bmd is not None:
         derived_t = _t_from_bmd(found_bmd)
         pred_label, confidence = _label_from_t(derived_t)
         src = f"BMD from report ({coverage} clinical fields also found)"
-        return pred_label, confidence, round(derived_t, 2), round(found_bmd, 3), src, extracted_data
+        return pred_label, confidence, round(derived_t, 2), round(found_bmd, 3), src, extracted_data, raw_features_16
 
     # ── PATH D: Keywords only ────────────────────────────────────────────
     if keyword_label:
@@ -441,8 +531,8 @@ def analyse_report(
             t_score, bmd_v, confidence = -1.8, 0.73, 0.74
         else:
             t_score, bmd_v, confidence = -0.4, 0.92, 0.75
-        return keyword_label, confidence, t_score, bmd_v, "Keyword diagnosis only -- no numeric values found", extracted_data
+        return keyword_label, confidence, t_score, bmd_v, "Keyword diagnosis only — no numeric values found", extracted_data, raw_features_16
 
     # ── PATH E: Nothing found ─────────────────────────────────────────────
     label, confidence, t_score, bmd = _hash_fallback(content, filename)
-    return label, confidence, t_score, bmd, "No recognizable clinical data -- statistical estimate", {}
+    return label, confidence, t_score, bmd, "No recognizable clinical data — statistical estimate", {}, raw_features_16

@@ -3,20 +3,23 @@ routes/xray.py
 ─────────────────────────────────────────────────────────────────────────────
 POST /predict/xray
 
-Accepts a bone X-ray image.
+Accepts a bone X-ray image (JPEG, PNG, TIFF, BMP, DICOM).
 
-Current behaviour  : returns a simulated prediction.
-Future integration : replace the simulation block with a real CNN / ViT model
-                     (e.g. DenseNet-121 fine-tuned on bone X-ray datasets)
-                     inside the clearly marked section below.
+Primary path  : EfficientNet-B3 CNN  (efficientnet_b3_osteoporosis.pth)
+Fallback path : Multi-feature heuristic image analysis (no GPU required)
+
+EfficientNet-B3 details:
+  • Input  : 300×300 RGB, ImageNet normalisation
+  • Output : 3-class softmax  →  Normal | Osteopenia | Osteoporosis
 """
 
 import logging
 from fastapi import APIRouter, File, UploadFile, HTTPException
 
 from app.schemas import PredictionResponse
-from app.utils import get_clinical_data, simulate_prediction, build_t_score, build_bmd
-from models.xray_vision_model import analyse_xray
+from app.utils import get_clinical_data, build_t_score, build_bmd
+from app.model_loader import get_xray_model, is_xray_model_loaded
+from models.xray_vision_model import analyse_xray, analyse_xray_cnn
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/predict", tags=["X-Ray Prediction"])
@@ -29,6 +32,7 @@ ALLOWED_XRAY_TYPES = {
     "image/bmp",
     "image/dicom",
     "application/dicom",
+    "image/webp",
 }
 MAX_FILE_SIZE_MB = 30
 
@@ -38,18 +42,18 @@ MAX_FILE_SIZE_MB = 30
     response_model=PredictionResponse,
     summary="Predict osteoporosis from a bone X-ray image",
     description=(
-        "Upload a bone X-ray image (JPEG, PNG, TIFF, BMP, DICOM). "
-        "The model detects cortical thickness changes and trabecular patterns "
-        "to estimate osteoporosis risk."
+        "Upload a bone X-ray image (JPEG, PNG, TIFF, BMP, DICOM, WebP). "
+        "Primary model: EfficientNet-B3 fine-tuned on bone X-rays (3-class). "
+        "Falls back to heuristic analysis when the CNN model is unavailable."
     ),
 )
 async def predict_xray(
-    file: UploadFile = File(..., description="Bone X-ray image (JPEG/PNG/TIFF/BMP/DICOM)"),
+    file: UploadFile = File(..., description="Bone X-ray image (JPEG/PNG/TIFF/BMP/DICOM/WebP)"),
 ) -> PredictionResponse:
     """
     Analyse an uploaded bone X-ray for osteoporosis risk.
 
-    - **file**: JPEG / PNG / TIFF / BMP / DICOM (max 30 MB)
+    - **file**: JPEG / PNG / TIFF / BMP / DICOM / WebP (max 30 MB)
     """
     # ── Validate content type ────────────────────────────────────────────
     if file.content_type not in ALLOWED_XRAY_TYPES:
@@ -57,7 +61,7 @@ async def predict_xray(
             status_code=415,
             detail=(
                 f"Unsupported file type '{file.content_type}'. "
-                f"Allowed: JPEG, PNG, TIFF, BMP, DICOM"
+                "Allowed: JPEG, PNG, TIFF, BMP, DICOM, WebP"
             ),
         )
 
@@ -71,39 +75,38 @@ async def predict_xray(
         )
 
     logger.info(
-        "X-ray file received: name='%s', type='%s', size=%.2f MB",
+        "X-ray received: name='%s', type='%s', size=%.2f MB",
         file.filename,
         file.content_type,
         size_mb,
     )
 
-    # ════════════════════════════════════════════════════════════════════
-    # 🔮  FUTURE: Replace this block with a real CNN / ViT image model
-    #
-    #    Recommended integration path:
-    #      1. Decode image bytes → PIL Image or OpenCV ndarray
-    #           from PIL import Image; import io
-    #           img = Image.open(io.BytesIO(contents)).convert("RGB")
-    #
-    #      2. Preprocess (resize, normalise, tensor conversion)
-    #           tensor = preprocess_transform(img).unsqueeze(0)
-    #
-    #      3. Run inference
-    #           with torch.no_grad():
-    #               logits = xray_cnn_model(tensor)
-    #               proba  = torch.softmax(logits, dim=1).numpy()[0]
-    #
-    #      4. Map to label
-    #           label      = CLASS_LABEL_MAP[int(np.argmax(proba))]
-    #           confidence = float(np.max(proba))
-    #
-    #    Suggested model architectures:
-    #      • DenseNet-121 (torchvision)
-    #      • EfficientNet-B4
-    #      • Vision Transformer (ViT-B/16)
-    # ════════════════════════════════════════════════════════════════════
-    label, confidence, t_score_val, bmd_val, analysis_metrics = analyse_xray(contents)
-    logger.info("X-ray model result: %s (%.4f) — %d metrics", label, confidence, len(analysis_metrics))
+    # ── EfficientNet-B3 CNN (primary) ────────────────────────────────────
+    if is_xray_model_loaded():
+        try:
+            cnn_model = get_xray_model()
+            label, confidence, t_score_val, bmd_val, analysis_metrics = analyse_xray_cnn(
+                contents, cnn_model
+            )
+            evidence = (
+                f"EfficientNet-B3 deep CNN — "
+                f"P(Normal)={analysis_metrics.get('P(Normal)', '?')}  "
+                f"P(Osteopenia)={analysis_metrics.get('P(Osteopenia)', '?')}  "
+                f"P(Osteoporosis)={analysis_metrics.get('P(Osteoporosis)', '?')}"
+            )
+            logger.info(
+                "EfficientNet-B3 prediction: %s (confidence=%.4f)", label, confidence
+            )
+        except Exception as exc:
+            logger.error("CNN inference failed, falling back to heuristic: %s", exc)
+            label, confidence, t_score_val, bmd_val, analysis_metrics = analyse_xray(contents)
+            evidence = f"Heuristic analysis (CNN error: {exc})"
+
+    # ── Heuristic fallback (CNN not loaded) ──────────────────────────────
+    else:
+        logger.info("EfficientNet-B3 not loaded — using heuristic image analysis.")
+        label, confidence, t_score_val, bmd_val, analysis_metrics = analyse_xray(contents)
+        evidence = f"Heuristic multi-feature image analysis ({len(analysis_metrics)} metrics)"
 
     clinical = get_clinical_data(label)
 
@@ -115,6 +118,6 @@ async def predict_xray(
         fracture_risk=clinical["fracture_risk"],
         suggestions=clinical["suggestions"],
         medications=clinical["medications"],
-        evidence_source=f"Multi-feature image analysis ({len(analysis_metrics)} metrics computed)",
+        evidence_source=evidence,
         extracted_data=analysis_metrics if analysis_metrics else None,
     )
